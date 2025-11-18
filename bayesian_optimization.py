@@ -1,4 +1,5 @@
 import warnings
+
 warnings.filterwarnings('ignore')
 
 """
@@ -47,25 +48,24 @@ class SurrogateConstrainedBOEnv(gym.Env):
         )
 
         # GPs for objective and constraints - more stable settings
-        # kernel = ConstantKernel(1.0, constant_value_bounds=(0.1, 10.0)) * \
-        #          Matern(length_scale=0.5, length_scale_bounds=(0.1, 2.0), nu=2.5)
-        # self.gp_objective = GaussianProcessRegressor(
-        #     kernel=kernel, alpha=1e-4, normalize_y=True, n_restarts_optimizer=2
-        # )
-        # self.gp_constraint = GaussianProcessRegressor(
-        #     kernel=kernel, alpha=1e-4, normalize_y=True, n_restarts_optimizer=2
-        # )
-
-        # GPs for objective and constraints - fixed hyperparameters (no L-BFGS)
         kernel = ConstantKernel(1.0, constant_value_bounds=(0.1, 10.0)) * \
                  Matern(length_scale=0.5, length_scale_bounds=(0.1, 2.0), nu=2.5)
         self.gp_objective = GaussianProcessRegressor(
-            kernel=kernel, alpha=1e-4, normalize_y=True, optimizer=None
+            kernel=kernel, alpha=1e-4, normalize_y=True, n_restarts_optimizer=2
         )
         self.gp_constraint = GaussianProcessRegressor(
-            kernel=kernel, alpha=1e-4, normalize_y=True, optimizer=None
+            kernel=kernel, alpha=1e-4, normalize_y=True, n_restarts_optimizer=2
         )
 
+        # GPs for objective and constraints - fixed hyperparameters (no L-BFGS)
+        # kernel = ConstantKernel(1.0, constant_value_bounds=(0.1, 10.0)) * \
+        #          Matern(length_scale=0.5, length_scale_bounds=(0.1, 2.0), nu=2.5)
+        # self.gp_objective = GaussianProcessRegressor(
+        #     kernel=kernel, alpha=1e-4, normalize_y=True, optimizer=None
+        # )
+        # self.gp_constraint = GaussianProcessRegressor(
+        #     kernel=kernel, alpha=1e-4, normalize_y=True, optimizer=None
+        # )
 
         self.reset()
 
@@ -485,19 +485,19 @@ class RealConstrainedBOEnv:
 
         # Reduce evaluations in 40D case
 
-        # self.gp_objective = GaussianProcessRegressor(
-        #     kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=5
-        # )
-        # self.gp_constraint = GaussianProcessRegressor(
-        #     kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=5
-        # )
-
         self.gp_objective = GaussianProcessRegressor(
-            kernel=kernel, alpha=1e-6, normalize_y=True, optimizer=None
+            kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=5
         )
         self.gp_constraint = GaussianProcessRegressor(
-            kernel=kernel, alpha=1e-6, normalize_y=True, optimizer=None
+            kernel=kernel, alpha=1e-6, normalize_y=True, n_restarts_optimizer=5
         )
+
+        # self.gp_objective = GaussianProcessRegressor(
+        #     kernel=kernel, alpha=1e-6, normalize_y=True, optimizer=None
+        # )
+        # self.gp_constraint = GaussianProcessRegressor(
+        #     kernel=kernel, alpha=1e-6, normalize_y=True, optimizer=None
+        # )
 
         self.X_observed = []
         self.y_observed = []
@@ -543,36 +543,49 @@ class RealConstrainedBOEnv:
     def get_state(self):
         """Get state representation for RL agent"""
         if len(self.X_observed) == 0:
+            # 10 summary stats + last_point (D) + best_point (D)
             return np.zeros(10 + 2 * self.dim, dtype=np.float32)
 
-        y_arr = np.array(self.y_observed)
-        c_arr = np.array(self.c_observed)
+        y_arr = np.asarray(self.y_observed)
+        c_arr = np.asarray(self.c_observed)
 
-        feasible_mask = c_arr <= 0
+        feasible_mask = c_arr <= 0.0
         best_feasible = np.max(y_arr[feasible_mask]) if feasible_mask.any() else -np.inf
 
-        y_mean = np.mean(y_arr)
-        y_std = np.std(y_arr)
-        y_max = np.max(y_arr)
+        y_mean = float(np.mean(y_arr))
+        y_std = float(np.std(y_arr) + 1e-6)
+        y_max = float(np.max(y_arr))
 
-        n_feasible = np.sum(feasible_mask)
+        n_feasible = int(np.sum(feasible_mask))
         feasible_ratio = n_feasible / len(c_arr)
 
-        last_point = self.X_observed[-1]
+        last_point = np.asarray(self.X_observed[-1], dtype=np.float32)
 
+        # Best feasible point (only over feasible points)
         if feasible_mask.any():
-            best_idx = np.argmax(y_arr * feasible_mask)
-            best_point = self.X_observed[best_idx]
+            masked_y = np.where(feasible_mask, y_arr, -np.inf)
+            best_idx = int(np.argmax(masked_y))
+            best_point = np.asarray(self.X_observed[best_idx], dtype=np.float32)
         else:
-            best_point = np.zeros(self.dim)
+            best_point = np.zeros(self.dim, dtype=np.float32)
 
-        state = np.concatenate([
-            [best_feasible, y_mean, y_std, y_max, feasible_ratio,
-             1.0, len(self.X_observed) / 100],
-            [0, 0, 0],
-            last_point,
-            best_point
-        ]).astype(np.float32)
+        summary = np.array(
+            [
+                best_feasible,  # 0
+                y_mean,  # 1
+                y_std,  # 2
+                y_max,  # 3
+                feasible_ratio,  # 4
+                1.0,  # 5 (dummy / budget flag)
+                len(self.X_observed) / 100.0,  # 6 (scaled eval count)
+                0.0, 0.0, 0.0  # 7–9 padding
+            ],
+            dtype=np.float32
+        )
+
+        state = np.concatenate(
+            [summary, last_point.astype(np.float32), best_point.astype(np.float32)]
+        )
 
         return state
 
@@ -580,16 +593,21 @@ class RealConstrainedBOEnv:
 def run_rl_bo_on_coco(agent, coco_problem, budget, n_initial=None):
     """Run trained RL agent on real COCO problem"""
     env = RealConstrainedBOEnv(coco_problem)
-    n_initial = n_initial or (2 * env.dim)
+    dim = env.dim
+
+    # default: 2 * D initial random samples
+    n_initial = n_initial or (2 * dim)
+    n_initial = int(min(n_initial, budget))
 
     # Initial random samples
     for _ in range(n_initial):
-        x_norm = np.random.uniform(0, 1, env.dim)
+        x_norm = np.random.uniform(0.0, 1.0, dim)
         y, c = env.evaluate(x_norm)
         env.add_observation(x_norm, y, c)
 
     # RL-guided optimization
-    for _ in range(budget - n_initial):
+    remaining = max(0, budget - n_initial)
+    for _ in range(remaining):
         state = env.get_state()
         action, _ = agent.select_action(state, deterministic=True)
 
@@ -597,15 +615,16 @@ def run_rl_bo_on_coco(agent, coco_problem, budget, n_initial=None):
         y, c = env.evaluate(action)
         env.add_observation(action, y, c)
 
-    # Return best feasible value found
-    c_arr = np.array(env.c_observed)
-    y_arr = np.array(env.y_observed)
-    feasible_mask = c_arr <= 0
+    # Return best feasible value found (larger = better in your current convention)
+    y_arr = np.asarray(env.y_observed)
+    c_arr = np.asarray(env.c_observed)
+    feasible_mask = c_arr <= 0.0
 
     if feasible_mask.any():
-        return np.max(y_arr[feasible_mask])
+        return float(np.max(y_arr[feasible_mask]))
     else:
-        return -np.inf
+        return float("-inf")
+
 
 
 # =============================================================================
@@ -615,51 +634,62 @@ def run_rl_bo_on_coco(agent, coco_problem, budget, n_initial=None):
 def main():
     """
     Run benchmarks on COCO constrained BBOB functions.
-    Note: This assumes you have cocoex installed and the constrained suite available.
+
+    Functions:   2, 4, 6, 50, 52, 54
+    Instances:   0, 1, 2  (mapped to COCO instances 1, 2, 3)
+    Dimensions:  2, 10
+    Repetitions: 5 per (function, instance, dimension)
+
+    Budget per run:
+      - Minimum: 10 * D function evaluations
+      - Using:   30 * D (if computationally feasible)
     """
 
-    functions = [2, 4, 6, 50, 52, 54]
-    instances = [0, 1, 2]
-    dimensions = [2, 10]
+    functions   = [2, 4, 6, 50, 52, 54]
+    instances   = [0, 1, 2]    # assignment instances (we map to COCO by +1)
+    dimensions  = [2, 10]
     repetitions = 5
 
     results = {}
+
+    # Initialise COCO suite once (we pick problems by function / dim / instance)
+    suite = cocoex.Suite("bbob-constrained", "", "")
 
     for dim in dimensions:
         print(f"\n{'=' * 60}")
         print(f"TRAINING AGENT FOR DIMENSION {dim}")
         print(f"{'=' * 60}\n")
 
-        # Standard n_episodes
-        # n_episodes = 500
-
-        # Dynamic n_episodes
+        # Dynamic number of training episodes per dimension
         if dim == 2:
             n_episodes = 500
         elif dim == 10:
             n_episodes = 300
-        else:  # dim == 40
+        else:
             n_episodes = 200
 
-        # Train one agent per dimension
+        # Train one PPO agent per dimension on the surrogate environment
         agent = train_rl_agent(dim=dim, n_episodes=n_episodes, horizon=5)
 
-        # Initialise COCO suite once per dimension
-        suite = cocoex.Suite("bbob-constrained", "", "")
+        # Budget settings
+        min_budget = 10 * dim
+        max_budget = 30 * dim
+        budget = max_budget        # satisfies "≥ 10D" and uses 30D if possible
+        print(f"Using budget {budget} evaluations per run (min allowed {min_budget}).")
 
         for func in functions:
             for inst in instances:
-                print(f"\nEvaluating F{func}, Instance {inst}, Dim {dim}")
+                coco_inst = inst + 1   # COCO instances start at 1
+
+                print(f"\nEvaluating F{func}, Instance {inst} (COCO inst {coco_inst}), Dim {dim}")
 
                 try:
                     problem = suite.get_problem_by_function_dimension_instance(
-                        func, dim, inst
+                        func, dim, coco_inst
                     )
                 except Exception as e:
-                    print(f"  Could not load problem F{func} (dim={dim}, inst={inst}): {e}")
+                    print(f"  Could not load problem F{func} (dim={dim}, inst={coco_inst}): {e}")
                     continue
-
-                budget = 30 * dim
 
                 rep_results = []
                 for rep in range(repetitions):
@@ -667,19 +697,21 @@ def main():
                     rep_results.append(best)
                     print(f"  Rep {rep + 1}: {best:.4f}")
 
-                results[f"F{func}_i{inst}_d{dim}"] = {
-                    'mean': np.mean(rep_results),
-                    'std': np.std(rep_results),
-                    'all': rep_results
+                key = f"F{func}_i{inst}_d{dim}"
+                results[key] = {
+                    "mean": float(np.mean(rep_results)),
+                    "std":  float(np.std(rep_results)),
+                    "all":  rep_results,
                 }
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("FINAL RESULTS")
-    print("="*60)
+    print("=" * 60)
     for key, val in results.items():
         print(f"{key}: {val['mean']:.4f} ± {val['std']:.4f}")
 
     return results
+
 
 
 if __name__ == "__main__":
