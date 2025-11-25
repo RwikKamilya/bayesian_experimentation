@@ -15,7 +15,7 @@ from typing import Optional
 
 from botorch.models import SingleTaskGP, ModelListGP
 from botorch.models.transforms.input import Normalize
-from botorch.acquisition import qLogExpectedImprovement  # *** qLogEI, not qLogNEI ***
+from botorch.acquisition import qLogExpectedImprovement  
 from botorch.optim import optimize_acqf
 from botorch.fit import fit_gpytorch_mll
 from botorch.sampling.normal import SobolQMCNormalSampler
@@ -56,11 +56,9 @@ class BaselineAgent:
 
 def create_baseline_agent(dim, **kwargs):
     """
-    Create baseline agent (no training needed).
+    Create baseline agent (dummy).
     Replaces train_rl_agent() in main loop.
     """
-    print(f"Creating baseline agent for {dim}D problems (qLogEI, q=1)")
-    print("No training required for baseline method.\n")
     return BaselineAgent(dim)
 
 
@@ -88,7 +86,7 @@ objective = GenericMCObjective(objective=obj_callable)
 
 def initialize_model(train_x, train_obj, train_con, state_dict=None):
     """
-    Initialize ModelListGP - EXACT copy from tutorial.
+    Initialize ModelListGP.
     """
     # define models for objective and constraint
     model_obj = SingleTaskGP(
@@ -117,19 +115,16 @@ def initialize_model(train_x, train_obj, train_con, state_dict=None):
 
 
 # =============================================================================
-# MAIN BASELINE BO FUNCTION (PURE qLogEI)
+# MAIN BASELINE BO FUNCTION
 # =============================================================================
 
 def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
     """
     Run baseline BO with qLogEI (q=1) on COCO problem.
 
-    PURE implementation following BoTorch tutorial, adapted only for:
+    Following BoTorch tutorial:
     - COCO problems instead of Hartmann6
     - q=1 instead of q=3
-    - Interface compatibility with RL method
-
-    NO changes to the core algorithm.
     """
     dim = coco_problem.dimension
     lower_bounds = coco_problem.lower_bounds

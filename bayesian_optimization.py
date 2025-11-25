@@ -645,7 +645,7 @@ def main(use_baseline=False):
       - Using:   30 * D (if computationally feasible)
 
     Args:
-        use_baseline: If True, use qLogNEI baseline instead of RL agent
+        use_baseline: If True, use qLogEI baseline instead of RL agent
     """
 
     # Select method
@@ -653,7 +653,7 @@ def main(use_baseline=False):
         from baseline_botorch import create_baseline_agent, run_baseline_bo_on_coco
         train_agent = create_baseline_agent
         run_bo = run_baseline_bo_on_coco
-        method_name = "BASELINE (qLogNEI, q=1)"
+        method_name = "BASELINE (qLogEI, q=1)"
     else:
         train_agent = train_rl_agent
         run_bo = run_rl_bo_on_coco
@@ -741,12 +741,12 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Constrained Bayesian Optimization: RL-Enhanced vs Baseline"
+        description="Constrained Bayesian Optimization with RL-enhanced agent or baseline"
     )
     parser.add_argument(
         "--baseline",
         action="store_true",
-        help="Use qLogNEI baseline instead of RL agent"
+        help="Use qLogEI baseline instead of RL agent"
     )
     parser.add_argument(
         "--save",

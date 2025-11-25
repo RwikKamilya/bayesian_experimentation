@@ -2,7 +2,7 @@
 
 ## Overview
 
-The baseline qLogNoisyExpectedImprovement (qLogNEI) implementation is now integrated into your existing experimental framework. You can easily switch between the RL-enhanced method and the baseline using a simple command-line flag.
+The baseline qLogNoisyExpectedImprovement (qLogEI) implementation is now integrated into your existing experimental framework. You can easily switch between the RL-enhanced method and the baseline using a simple command-line flag.
 
 ## Quick Start
 
@@ -49,21 +49,21 @@ else:
 
 Both methods follow the same interface:
 
-| Function | RL Method | Baseline Method |
-|----------|-----------|-----------------|
-| **Agent Creation** | `train_rl_agent(dim, n_episodes, horizon)` | `create_baseline_agent(dim)` |
-| **Optimization** | `run_rl_bo_on_coco(agent, problem, budget)` | `run_baseline_bo_on_coco(agent, problem, budget)` |
-| **Return Value** | Best feasible objective value | Best feasible objective value |
+| Function           | RL Method                                   | Baseline Method                                   |
+| ------------------ | ------------------------------------------- | ------------------------------------------------- |
+| **Agent Creation** | `train_rl_agent(dim, n_episodes, horizon)`  | `create_baseline_agent(dim)`                      |
+| **Optimization**   | `run_rl_bo_on_coco(agent, problem, budget)` | `run_baseline_bo_on_coco(agent, problem, budget)` |
+| **Return Value**   | Best feasible objective value               | Best feasible objective value                     |
 
 ### Key Differences
 
-| Aspect | RL-Enhanced | Baseline |
-|--------|-------------|----------|
-| **Agent Training** | Required (500/300/200 episodes) | Not required |
-| **Acquisition Function** | Learned policy | qLogNoisyExpectedImprovement |
-| **Batch Size** | 1 | 1 |
-| **Lookahead** | Multi-step (horizon=5) | Single-step (myopic) |
-| **Computational Cost** | Higher (training + evaluation) | Lower (evaluation only) |
+| Aspect                   | RL-Enhanced                     | Baseline                     |
+| ------------------------ | ------------------------------- | ---------------------------- |
+| **Agent Training**       | Required (500/300/200 episodes) | Not required                 |
+| **Acquisition Function** | Learned policy                  | qLogNoisyExpectedImprovement |
+| **Batch Size**           | 1                               | 1                            |
+| **Lookahead**            | Multi-step (horizon=5)          | Single-step (myopic)         |
+| **Computational Cost**   | Higher (training + evaluation)  | Lower (evaluation only)      |
 
 ## Baseline Implementation Details
 
@@ -200,6 +200,7 @@ python compare_methods.py \
 ```
 
 This generates:
+
 - Convergence plots for each problem
 - Aggregate performance comparisons
 - Statistical significance tests
@@ -210,11 +211,13 @@ This generates:
 ### Modified Files
 
 **`bayesian_optimization.py`**:
+
 - Added `use_baseline` parameter to `main()`
 - Conditional import of baseline or RL methods
 - Command-line argument parsing
 
 **New Files**:
+
 - `baseline_botorch.py` - Baseline implementation module
 
 ### Flow Diagram
@@ -288,6 +291,7 @@ ModuleNotFoundError: No module named 'botorch'
 ```
 
 **Solution**: Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -297,6 +301,7 @@ pip install -r requirements.txt
 If you get CUDA errors but want to use CPU:
 
 Edit `baseline_botorch.py`:
+
 ```python
 device = torch.device("cpu")  # Force CPU
 ```
@@ -305,14 +310,14 @@ device = torch.device("cpu")  # Force CPU
 
 ### Expected Runtime
 
-| Method | Dimension | Approximate Time per Config* |
-|--------|-----------|------------------------------|
-| Baseline | 2D | ~30 seconds |
-| Baseline | 10D | ~2 minutes |
-| RL | 2D | ~10 minutes (training) + 30 seconds |
-| RL | 10D | ~6 minutes (training) + 2 minutes |
+| Method   | Dimension | Approximate Time per Config\*       |
+| -------- | --------- | ----------------------------------- |
+| Baseline | 2D        | ~30 seconds                         |
+| Baseline | 10D       | ~2 minutes                          |
+| RL       | 2D        | ~10 minutes (training) + 30 seconds |
+| RL       | 10D       | ~6 minutes (training) + 2 minutes   |
 
-*Time varies based on hardware. GPU significantly speeds up BoTorch operations.
+\*Time varies based on hardware. GPU significantly speeds up BoTorch operations.
 
 ### Memory Usage
 
