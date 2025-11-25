@@ -63,7 +63,7 @@ def create_baseline_agent(dim, **kwargs):
 
 
 # =============================================================================
-# ACQUISITION FUNCTION HELPERS (PURE FROM TUTORIAL)
+# ACQUISITION FUNCTION HELPERS  
 # =============================================================================
 
 def obj_callable(Z: torch.Tensor, X: Optional[torch.Tensor] = None):
@@ -81,7 +81,7 @@ objective = GenericMCObjective(objective=obj_callable)
 
 
 # =============================================================================
-# MODEL INITIALIZATION (PURE FROM TUTORIAL)
+# MODEL INITIALIZATION  
 # =============================================================================
 
 def initialize_model(train_x, train_obj, train_con, state_dict=None):
@@ -164,7 +164,7 @@ def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
     bounds = torch.tensor([[0.0] * dim, [1.0] * dim], device=device, dtype=dtype)
 
     # ==========================================================================
-    # PHASE 1: Generate initial data (PURE from tutorial)
+    # PHASE 1: Generate initial data  
     # ==========================================================================
 
     train_x = torch.rand(n_initial, dim, device=device, dtype=dtype)
@@ -179,27 +179,27 @@ def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
     exact_obj = torch.tensor(exact_obj_list, device=device, dtype=dtype).unsqueeze(-1)
     exact_con = torch.tensor(exact_con_list, device=device, dtype=dtype).unsqueeze(-1)
 
-    # Add observation noise (PURE from tutorial)
+    # Add observation noise  
     train_obj = exact_obj + NOISE_SE * torch.randn_like(exact_obj)
     train_con = exact_con + NOISE_SE * torch.randn_like(exact_con)
 
-    # Initialize model (PURE from tutorial)
+    # Initialize model  
     mll, model = initialize_model(train_x, train_obj, train_con)
 
     # ==========================================================================
-    # PHASE 2: BO Loop with qLogEI (PURE from tutorial)
+    # PHASE 2: BO Loop with qLogEI  
     # ==========================================================================
 
     n_iterations = budget - n_initial
 
     for iteration in range(n_iterations):
-        # Fit the model (PURE from tutorial)
+        # Fit the model  
         fit_gpytorch_mll(mll)
 
-        # Define qLogEI acquisition function (PURE from tutorial)
+        # Define qLogEI acquisition function  
         qmc_sampler = SobolQMCNormalSampler(sample_shape=torch.Size([256]))
 
-        # *** KEY PART: qLogEI using best_f (PURE from tutorial) ***
+        # *** KEY PART: qLogEI using best_f   ***
         # For best_f, use best observed noisy values as approximation
         best_f = (train_obj * (train_con <= 0).to(train_obj)).max()
 
@@ -211,7 +211,7 @@ def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
             constraints=[constraint_callable],
         )
 
-        # Optimize acquisition function (PURE from tutorial)
+        # Optimize acquisition function  
         candidates, _ = optimize_acqf(
             acq_function=qLogEI,
             bounds=bounds,
@@ -228,11 +228,11 @@ def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
         exact_obj_new = torch.tensor([[new_obj]], device=device, dtype=dtype)
         exact_con_new = torch.tensor([[new_con]], device=device, dtype=dtype)
 
-        # Add observation noise (PURE from tutorial)
+        # Add observation noise  
         new_obj_noisy = exact_obj_new + NOISE_SE * torch.randn_like(exact_obj_new)
         new_con_noisy = exact_con_new + NOISE_SE * torch.randn_like(exact_con_new)
 
-        # Update training points (PURE from tutorial)
+        # Update training points  
         train_x = torch.cat([train_x, new_x])
         train_obj = torch.cat([train_obj, new_obj_noisy])
         train_con = torch.cat([train_con, new_con_noisy])
@@ -273,6 +273,5 @@ if __name__ == "__main__":
     print("  - COCO problems (instead of Hartmann6)")
     print("  - q=1 batch size (instead of q=3)")
     print("  - Interface compatibility with RL method")
-    print("\nNO algorithmic changes to the baseline.")
     print("\nUsage in bayesian_optimization.py:")
     print("  python bayesian_optimization.py --baseline")

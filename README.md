@@ -2,7 +2,7 @@
 
 ## Overview
 
-The baseline qLogNoisyExpectedImprovement (qLogEI) implementation is now integrated into your existing experimental framework. You can easily switch between the RL-enhanced method and the baseline using a simple command-line flag.
+The baseline qLogExpectedImprovement (qLogEI) implementation integrated into existing experimental framework.
 
 ## Quick Start
 
@@ -38,8 +38,8 @@ The implementation uses a **drop-in replacement** pattern:
 # In bayesian_optimization.py main():
 if use_baseline:
     from baseline_botorch import create_baseline_agent, run_baseline_bo_on_coco
-    train_agent = create_baseline_agent       # No training needed
-    run_bo = run_baseline_bo_on_coco         # Uses qLogNEI
+    train_agent = create_baseline_agent       # No training
+    run_bo = run_baseline_bo_on_coco         # Uses qLogEI
 else:
     train_agent = train_rl_agent             # Train PPO agent
     run_bo = run_rl_bo_on_coco              # Uses RL policy
@@ -57,13 +57,13 @@ Both methods follow the same interface:
 
 ### Key Differences
 
-| Aspect                   | RL-Enhanced                     | Baseline                     |
-| ------------------------ | ------------------------------- | ---------------------------- |
-| **Agent Training**       | Required (500/300/200 episodes) | Not required                 |
-| **Acquisition Function** | Learned policy                  | qLogNoisyExpectedImprovement |
-| **Batch Size**           | 1                               | 1                            |
-| **Lookahead**            | Multi-step (horizon=5)          | Single-step (myopic)         |
-| **Computational Cost**   | Higher (training + evaluation)  | Lower (evaluation only)      |
+| Aspect                   | RL-Enhanced                     | Baseline                |
+| ------------------------ | ------------------------------- | ----------------------- |
+| **Agent Training**       | Required (500/300/200 episodes) | Not required            |
+| **Acquisition Function** | Learned policy                  | qLogExpectedImprovement |
+| **Batch Size**           | 1                               | 1                       |
+| **Lookahead**            | Multi-step (horizon=5)          | Single-step (myopic)    |
+| **Computational Cost**   | Higher (training + evaluation)  | Lower (evaluation only) |
 
 ## Baseline Implementation Details
 
@@ -79,7 +79,7 @@ This module provides:
 
 The baseline uses:
 
-- **Acquisition Function**: `qLogNoisyExpectedImprovement` from BoTorch
+- **Acquisition Function**: `qLogExpectedImprovement` from BoTorch
 - **Batch Size**: q=1 (as required by assignment)
 - **Model**: `ModelListGP` with separate GPs for objective and constraint
 - **Noise**: Homoskedastic with σ = 0.25
@@ -361,6 +361,6 @@ The baseline is now **fully integrated** into your experimental framework:
 ✅ **Same interface**: Compatible with existing code
 ✅ **Same setup**: Identical experimental configuration
 ✅ **Easy comparison**: Results in same format
-✅ **Assignment compliant**: qLogNEI with q=1 as required
+✅ **Assignment compliant**: qLogEI with q=1 as required
 
 You can now run comprehensive comparisons between your novel RL-enhanced approach and the state-of-the-art baseline!
