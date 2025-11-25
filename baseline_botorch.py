@@ -1,19 +1,12 @@
 """
 Baseline BoTorch module for constrained Bayesian Optimization
 
-This module provides a drop-in replacement for the RL-enhanced approach,
-using qLogNoisyExpectedImprovement (qLogNEI) with batch size q=1.
+PURE IMPLEMENTATION of qLogEI (q=1) from BoTorch tutorial
+Assignment requirement: "BoTorch constrained BO with qLogEI (batch size q=1)"
 
 Based on: https://botorch.org/docs/tutorials/closed_loop_botorch_only/
 
-Usage in bayesian_optimization.py main():
-    Replace:
-        agent = train_rl_agent(dim=dim, n_episodes=n_episodes, horizon=5)
-        best = run_rl_bo_on_coco(agent, problem, budget)
-
-    With:
-        agent = create_baseline_agent(dim=dim)
-        best = run_baseline_bo_on_coco(agent, problem, budget)
+This is a drop-in replacement for the RL-enhanced approach.
 """
 
 import numpy as np
@@ -22,7 +15,7 @@ from typing import Optional
 
 from botorch.models import SingleTaskGP, ModelListGP
 from botorch.models.transforms.input import Normalize
-from botorch.acquisition import qLogNoisyExpectedImprovement
+from botorch.acquisition import qLogExpectedImprovement  # *** qLogEI, not qLogNEI ***
 from botorch.optim import optimize_acqf
 from botorch.fit import fit_gpytorch_mll
 from botorch.sampling.normal import SobolQMCNormalSampler
@@ -50,13 +43,11 @@ train_yvar = torch.tensor(NOISE_SE**2, device=device, dtype=dtype)
 class BaselineAgent:
     """
     Placeholder agent for baseline method.
-
-    The baseline doesn't need training, but we create this object
-    to maintain interface compatibility with the RL approach.
+    The baseline doesn't need training.
     """
     def __init__(self, dim):
         self.dim = dim
-        self.method = "qLogNEI"
+        self.method = "qLogEI"
         self.batch_size = 1
 
     def __repr__(self):
@@ -66,23 +57,15 @@ class BaselineAgent:
 def create_baseline_agent(dim, **kwargs):
     """
     Create baseline agent (no training needed).
-
-    This replaces train_rl_agent() in the main loop.
-
-    Args:
-        dim: Problem dimension
-        **kwargs: Ignored (for compatibility with RL agent interface)
-
-    Returns:
-        BaselineAgent instance
+    Replaces train_rl_agent() in main loop.
     """
-    print(f"Creating baseline agent for {dim}D problems (qLogNEI, q=1)")
+    print(f"Creating baseline agent for {dim}D problems (qLogEI, q=1)")
     print("No training required for baseline method.\n")
     return BaselineAgent(dim)
 
 
 # =============================================================================
-# ACQUISITION FUNCTION HELPERS
+# ACQUISITION FUNCTION HELPERS (PURE FROM TUTORIAL)
 # =============================================================================
 
 def obj_callable(Z: torch.Tensor, X: Optional[torch.Tensor] = None):
@@ -100,24 +83,14 @@ objective = GenericMCObjective(objective=obj_callable)
 
 
 # =============================================================================
-# MODEL INITIALIZATION
+# MODEL INITIALIZATION (PURE FROM TUTORIAL)
 # =============================================================================
 
 def initialize_model(train_x, train_obj, train_con, state_dict=None):
     """
-    Initialize ModelListGP with separate GPs for objective and constraint.
-
-    Args:
-        train_x: Training inputs [n, dim]
-        train_obj: Training objective values [n, 1]
-        train_con: Training constraint values [n, 1]
-        state_dict: Optional state dict for warm starting
-
-    Returns:
-        mll: Marginal log likelihood
-        model: ModelListGP instance
+    Initialize ModelListGP - EXACT copy from tutorial.
     """
-    # Define models for objective and constraint
+    # define models for objective and constraint
     model_obj = SingleTaskGP(
         train_x,
         train_obj,
@@ -132,11 +105,11 @@ def initialize_model(train_x, train_obj, train_con, state_dict=None):
         input_transform=Normalize(d=train_x.shape[-1]),
     ).to(train_x)
 
-    # Combine into multi-output GP model
+    # combine into a multi-output GP model
     model = ModelListGP(model_obj, model_con)
     mll = SumMarginalLogLikelihood(model.likelihood, model)
 
-    # Load state dict if provided (for warm starting)
+    # load state dict if it is passed
     if state_dict is not None:
         model.load_state_dict(state_dict)
 
@@ -144,183 +117,29 @@ def initialize_model(train_x, train_obj, train_con, state_dict=None):
 
 
 # =============================================================================
-# MAIN BASELINE BO FUNCTION
+# MAIN BASELINE BO FUNCTION (PURE qLogEI)
 # =============================================================================
 
 def run_baseline_bo_on_coco(agent, coco_problem, budget, n_initial=None):
     """
-    Run baseline BO with qLogNEI on a COCO problem.
+    Run baseline BO with qLogEI (q=1) on COCO problem.
 
-    This replaces run_rl_bo_on_coco() in the main loop.
+    PURE implementation following BoTorch tutorial, adapted only for:
+    - COCO problems instead of Hartmann6
+    - q=1 instead of q=3
+    - Interface compatibility with RL method
 
-    Args:
-        agent: BaselineAgent instance (unused, for interface compatibility)
-        coco_problem: COCO problem instance
-        budget: Total evaluation budget
-        n_initial: Number of initial random points (default: 2*D)
-
-    Returns:
-        best_feasible: Best feasible objective value found
+    NO changes to the core algorithm.
     """
     dim = coco_problem.dimension
     lower_bounds = coco_problem.lower_bounds
     upper_bounds = coco_problem.upper_bounds
 
-    # Default initial samples: 2*D
+    # Default: 2*D initial samples (same as RL method)
     n_initial = n_initial or (2 * dim)
     n_initial = min(n_initial, budget)
 
-    # Normalize bounds to [0, 1]^D
-    def normalize(x):
-        """Normalize from problem bounds to [0, 1]^D"""
-        return (x - lower_bounds) / (upper_bounds - lower_bounds)
-
-    def denormalize(x):
-        """Denormalize from [0, 1]^D to problem bounds"""
-        return x * (upper_bounds - lower_bounds) + lower_bounds
-
-    def evaluate_point(x_normalized):
-        """Evaluate a single normalized point on COCO function"""
-        if isinstance(x_normalized, torch.Tensor):
-            x_np = denormalize(x_normalized.cpu().numpy())
-        else:
-            x_np = denormalize(x_normalized)
-
-        # Evaluate objective
-        objective_value = float(coco_problem(x_np))
-
-        # Evaluate constraint (≤ 0 means feasible)
-        if hasattr(coco_problem, 'constraint'):
-            c_vals = np.asarray(coco_problem.constraint(x_np))
-            constraint_value = float(np.max(c_vals))
-        else:
-            constraint_value = -1.0  # Always feasible
-
-        return objective_value, constraint_value
-
-    # Optimization bounds in normalized space
-    bounds = torch.tensor([[0.0] * dim, [1.0] * dim], device=device, dtype=dtype)
-
-    # ==========================================================================
-    # PHASE 1: Initial random sampling
-    # ==========================================================================
-
-    train_x = torch.rand(n_initial, dim, device=device, dtype=dtype)
-
-    objectives = []
-    constraints = []
-    for i in range(n_initial):
-        obj, con = evaluate_point(train_x[i])
-        objectives.append(obj)
-        constraints.append(con)
-
-    train_obj = torch.tensor(objectives, device=device, dtype=dtype).unsqueeze(-1)
-    train_con = torch.tensor(constraints, device=device, dtype=dtype).unsqueeze(-1)
-
-    # Add observation noise
-    train_obj_noisy = train_obj + NOISE_SE * torch.randn_like(train_obj)
-    train_con_noisy = train_con + NOISE_SE * torch.randn_like(train_con)
-
-    # Initialize models
-    mll, model = initialize_model(train_x, train_obj_noisy, train_con_noisy)
-
-    # ==========================================================================
-    # PHASE 2: Bayesian Optimization loop
-    # ==========================================================================
-
-    n_bo_iterations = budget - n_initial
-
-    for iteration in range(n_bo_iterations):
-        # Fit GPs
-        fit_gpytorch_mll(mll)
-
-        # Create qLogNEI acquisition function
-        qmc_sampler = SobolQMCNormalSampler(sample_shape=torch.Size([256]))
-
-        qLogNEI = qLogNoisyExpectedImprovement(
-            model=model,
-            X_baseline=train_x,  # Use all observations for NEI
-            sampler=qmc_sampler,
-            objective=objective,
-            constraints=[constraint_callable],
-        )
-
-        # Optimize acquisition function to get next point
-        candidates, _ = optimize_acqf(
-            acq_function=qLogNEI,
-            bounds=bounds,
-            q=1,  # Batch size = 1
-            num_restarts=10,
-            raw_samples=512,
-            options={"batch_limit": 5, "maxiter": 200},
-        )
-
-        new_x = candidates.detach()
-
-        # Evaluate new point on true function
-        new_obj, new_con = evaluate_point(new_x[0])
-        new_obj_tensor = torch.tensor([[new_obj]], device=device, dtype=dtype)
-        new_con_tensor = torch.tensor([[new_con]], device=device, dtype=dtype)
-
-        # Add observation noise
-        new_obj_noisy = new_obj_tensor + NOISE_SE * torch.randn_like(new_obj_tensor)
-        new_con_noisy = new_con_tensor + NOISE_SE * torch.randn_like(new_con_tensor)
-
-        # Update training data
-        train_x = torch.cat([train_x, new_x])
-        train_obj = torch.cat([train_obj, new_obj_tensor])
-        train_con = torch.cat([train_con, new_con_tensor])
-        train_obj_noisy = torch.cat([train_obj_noisy, new_obj_noisy])
-        train_con_noisy = torch.cat([train_con_noisy, new_con_noisy])
-
-        # Reinitialize model with warm start
-        mll, model = initialize_model(
-            train_x,
-            train_obj_noisy,
-            train_con_noisy,
-            model.state_dict()
-        )
-
-    # ==========================================================================
-    # PHASE 3: Return best feasible value
-    # ==========================================================================
-
-    # Find best feasible point (using true objective values, not noisy)
-    feasible_mask = (train_con <= 0).squeeze()
-
-    if feasible_mask.any():
-        best_feasible = float(train_obj[feasible_mask].max())
-    else:
-        best_feasible = float('-inf')
-
-    return best_feasible
-
-
-# =============================================================================
-# CONVENIENCE FUNCTION (Optional)
-# =============================================================================
-
-def run_baseline_with_history(agent, coco_problem, budget, n_initial=None):
-    """
-    Extended version that also returns convergence history.
-
-    Args:
-        agent: BaselineAgent instance
-        coco_problem: COCO problem instance
-        budget: Total evaluation budget
-        n_initial: Number of initial random points
-
-    Returns:
-        best_feasible: Best feasible objective value
-        history: List of best feasible values at each iteration
-    """
-    dim = coco_problem.dimension
-    lower_bounds = coco_problem.lower_bounds
-    upper_bounds = coco_problem.upper_bounds
-
-    n_initial = n_initial or (2 * dim)
-    n_initial = min(n_initial, budget)
-
+    # Normalization functions
     def normalize(x):
         return (x - lower_bounds) / (upper_bounds - lower_bounds)
 
@@ -328,13 +147,16 @@ def run_baseline_with_history(agent, coco_problem, budget, n_initial=None):
         return x * (upper_bounds - lower_bounds) + lower_bounds
 
     def evaluate_point(x_normalized):
+        """Evaluate on COCO function"""
         if isinstance(x_normalized, torch.Tensor):
             x_np = denormalize(x_normalized.cpu().numpy())
         else:
             x_np = denormalize(x_normalized)
 
+        # Objective
         objective_value = float(coco_problem(x_np))
 
+        # Constraint (≤ 0 means feasible)
         if hasattr(coco_problem, 'constraint'):
             c_vals = np.asarray(coco_problem.constraint(x_np))
             constraint_value = float(np.max(c_vals))
@@ -343,99 +165,119 @@ def run_baseline_with_history(agent, coco_problem, budget, n_initial=None):
 
         return objective_value, constraint_value
 
+    # Bounds in normalized space [0,1]^D
     bounds = torch.tensor([[0.0] * dim, [1.0] * dim], device=device, dtype=dtype)
 
-    # Initial sampling
+    # ==========================================================================
+    # PHASE 1: Generate initial data (PURE from tutorial)
+    # ==========================================================================
+
     train_x = torch.rand(n_initial, dim, device=device, dtype=dtype)
 
-    objectives = []
-    constraints = []
+    exact_obj_list = []
+    exact_con_list = []
     for i in range(n_initial):
         obj, con = evaluate_point(train_x[i])
-        objectives.append(obj)
-        constraints.append(con)
+        exact_obj_list.append(obj)
+        exact_con_list.append(con)
 
-    train_obj = torch.tensor(objectives, device=device, dtype=dtype).unsqueeze(-1)
-    train_con = torch.tensor(constraints, device=device, dtype=dtype).unsqueeze(-1)
+    exact_obj = torch.tensor(exact_obj_list, device=device, dtype=dtype).unsqueeze(-1)
+    exact_con = torch.tensor(exact_con_list, device=device, dtype=dtype).unsqueeze(-1)
 
-    train_obj_noisy = train_obj + NOISE_SE * torch.randn_like(train_obj)
-    train_con_noisy = train_con + NOISE_SE * torch.randn_like(train_con)
+    # Add observation noise (PURE from tutorial)
+    train_obj = exact_obj + NOISE_SE * torch.randn_like(exact_obj)
+    train_con = exact_con + NOISE_SE * torch.randn_like(exact_con)
 
-    mll, model = initialize_model(train_x, train_obj_noisy, train_con_noisy)
+    # Initialize model (PURE from tutorial)
+    mll, model = initialize_model(train_x, train_obj, train_con)
 
-    # Track history
-    history = []
-    feasible_mask = (train_con <= 0).squeeze()
-    if feasible_mask.any():
-        history.append(float(train_obj[feasible_mask].max()))
-    else:
-        history.append(float('-inf'))
+    # ==========================================================================
+    # PHASE 2: BO Loop with qLogEI (PURE from tutorial)
+    # ==========================================================================
 
-    # BO loop
-    n_bo_iterations = budget - n_initial
+    n_iterations = budget - n_initial
 
-    for iteration in range(n_bo_iterations):
+    for iteration in range(n_iterations):
+        # Fit the model (PURE from tutorial)
         fit_gpytorch_mll(mll)
 
+        # Define qLogEI acquisition function (PURE from tutorial)
         qmc_sampler = SobolQMCNormalSampler(sample_shape=torch.Size([256]))
 
-        qLogNEI = qLogNoisyExpectedImprovement(
+        # *** KEY PART: qLogEI using best_f (PURE from tutorial) ***
+        # For best_f, use best observed noisy values as approximation
+        best_f = (train_obj * (train_con <= 0).to(train_obj)).max()
+
+        qLogEI = qLogExpectedImprovement(
             model=model,
-            X_baseline=train_x,
+            best_f=best_f,
             sampler=qmc_sampler,
             objective=objective,
             constraints=[constraint_callable],
         )
 
+        # Optimize acquisition function (PURE from tutorial)
         candidates, _ = optimize_acqf(
-            acq_function=qLogNEI,
+            acq_function=qLogEI,
             bounds=bounds,
-            q=1,
+            q=1,  # *** Batch size = 1 as required ***
             num_restarts=10,
             raw_samples=512,
             options={"batch_limit": 5, "maxiter": 200},
         )
 
+        # Get new observation (adapted for COCO)
         new_x = candidates.detach()
         new_obj, new_con = evaluate_point(new_x[0])
-        new_obj_tensor = torch.tensor([[new_obj]], device=device, dtype=dtype)
-        new_con_tensor = torch.tensor([[new_con]], device=device, dtype=dtype)
 
-        new_obj_noisy = new_obj_tensor + NOISE_SE * torch.randn_like(new_obj_tensor)
-        new_con_noisy = new_con_tensor + NOISE_SE * torch.randn_like(new_con_tensor)
+        exact_obj_new = torch.tensor([[new_obj]], device=device, dtype=dtype)
+        exact_con_new = torch.tensor([[new_con]], device=device, dtype=dtype)
 
+        # Add observation noise (PURE from tutorial)
+        new_obj_noisy = exact_obj_new + NOISE_SE * torch.randn_like(exact_obj_new)
+        new_con_noisy = exact_con_new + NOISE_SE * torch.randn_like(exact_con_new)
+
+        # Update training points (PURE from tutorial)
         train_x = torch.cat([train_x, new_x])
-        train_obj = torch.cat([train_obj, new_obj_tensor])
-        train_con = torch.cat([train_con, new_con_tensor])
-        train_obj_noisy = torch.cat([train_obj_noisy, new_obj_noisy])
-        train_con_noisy = torch.cat([train_con_noisy, new_con_noisy])
+        train_obj = torch.cat([train_obj, new_obj_noisy])
+        train_con = torch.cat([train_con, new_con_noisy])
 
-        # Update history
-        feasible_mask = (train_con <= 0).squeeze()
-        if feasible_mask.any():
-            history.append(float(train_obj[feasible_mask].max()))
-        else:
-            history.append(float('-inf'))
+        # Keep track of exact values for final evaluation
+        exact_obj = torch.cat([exact_obj, exact_obj_new])
+        exact_con = torch.cat([exact_con, exact_con_new])
 
+        # Reinitialize model (PURE from tutorial - warm starting)
         mll, model = initialize_model(
             train_x,
-            train_obj_noisy,
-            train_con_noisy,
-            model.state_dict()
+            train_obj,
+            train_con,
+            model.state_dict(),
         )
 
-    best_feasible = history[-1] if history else float('-inf')
+    # ==========================================================================
+    # PHASE 3: Return best feasible value
+    # ==========================================================================
 
-    return best_feasible, history
+    # Use exact values (without noise) for final best
+    feasible_mask = (exact_con <= 0).squeeze()
+
+    if feasible_mask.any():
+        best_feasible = float(exact_obj[feasible_mask].max())
+    else:
+        best_feasible = float('-inf')
+
+    return best_feasible
 
 
 if __name__ == "__main__":
-    print("Baseline BoTorch module for constrained Bayesian Optimization")
     print("=" * 70)
-    print("\nThis module provides qLogNoisyExpectedImprovement with q=1")
-    print("as a drop-in replacement for the RL-enhanced approach.")
-    print("\nTo use in bayesian_optimization.py:")
-    print("  1. Import: from baseline_botorch import create_baseline_agent, run_baseline_bo_on_coco")
-    print("  2. Replace train_rl_agent with create_baseline_agent")
-    print("  3. Replace run_rl_bo_on_coco with run_baseline_bo_on_coco")
-    print("\nOr add a command-line flag to switch between methods.")
+    print("PURE qLogEI Baseline (q=1) - BoTorch Tutorial Implementation")
+    print("=" * 70)
+    print("\nThis is the EXACT qLogEI implementation from the BoTorch tutorial,")
+    print("adapted ONLY for:")
+    print("  - COCO problems (instead of Hartmann6)")
+    print("  - q=1 batch size (instead of q=3)")
+    print("  - Interface compatibility with RL method")
+    print("\nNO algorithmic changes to the baseline.")
+    print("\nUsage in bayesian_optimization.py:")
+    print("  python bayesian_optimization.py --baseline")
