@@ -631,7 +631,7 @@ def run_rl_bo_on_coco(agent, coco_problem, budget, n_initial=None):
 # MAIN BENCHMARKING SCRIPT
 # =============================================================================
 
-def main():
+def main(use_baseline=False):
     """
     Run benchmarks on COCO constrained BBOB functions.
 
@@ -643,7 +643,25 @@ def main():
     Budget per run:
       - Minimum: 10 * D function evaluations
       - Using:   30 * D (if computationally feasible)
+
+    Args:
+        use_baseline: If True, use qLogEI baseline instead of RL agent
     """
+
+    # Select method
+    if use_baseline:
+        from baseline_botorch import create_baseline_agent, run_baseline_bo_on_coco
+        train_agent = create_baseline_agent
+        run_bo = run_baseline_bo_on_coco
+        method_name = "BASELINE (qLogEI, q=1)"
+    else:
+        train_agent = train_rl_agent
+        run_bo = run_rl_bo_on_coco
+        method_name = "RL-ENHANCED BO"
+
+    print("\n" + "=" * 70)
+    print(f"RUNNING: {method_name}")
+    print("=" * 70)
 
     functions   = [2, 4, 6, 50, 52, 54]
     instances   = [0, 1, 2]    # assignment instances (we map to COCO by +1)
@@ -657,19 +675,24 @@ def main():
 
     for dim in dimensions:
         print(f"\n{'=' * 60}")
-        print(f"TRAINING AGENT FOR DIMENSION {dim}")
+        if use_baseline:
+            print(f"PREPARING BASELINE FOR DIMENSION {dim}")
+        else:
+            print(f"TRAINING AGENT FOR DIMENSION {dim}")
         print(f"{'=' * 60}\n")
 
-        # Dynamic number of training episodes per dimension
-        if dim == 2:
-            n_episodes = 500
-        elif dim == 10:
-            n_episodes = 300
+        # Dynamic number of training episodes per dimension (only for RL)
+        if not use_baseline:
+            if dim == 2:
+                n_episodes = 500
+            elif dim == 10:
+                n_episodes = 300
+            else:
+                n_episodes = 200
+            agent = train_agent(dim=dim, n_episodes=n_episodes, horizon=5)
         else:
-            n_episodes = 200
-
-        # Train one PPO agent per dimension on the surrogate environment
-        agent = train_rl_agent(dim=dim, n_episodes=n_episodes, horizon=5)
+            # Baseline doesn't need training
+            agent = train_agent(dim=dim)
 
         # Budget settings
         min_budget = 10 * dim
@@ -693,7 +716,7 @@ def main():
 
                 rep_results = []
                 for rep in range(repetitions):
-                    best = run_rl_bo_on_coco(agent, problem, budget)
+                    best = run_bo(agent, problem, budget)
                     rep_results.append(best)
                     print(f"  Rep {rep + 1}: {best:.4f}")
 
@@ -715,18 +738,29 @@ def main():
 
 
 if __name__ == "__main__":
-    # For demonstration without actual COCO suite
-    # print("RL-Enhanced Constrained Bayesian Optimization")
-    # print("=" * 60)
-    # print("\nDemo: Training on 2D problems")
+    import argparse
 
-    # Train agent on surrogate
-    # agent_2d = train_rl_agent(dim=2, n_episodes=200, horizon=5)
+    parser = argparse.ArgumentParser(
+        description="Constrained Bayesian Optimization with RL-enhanced agent or baseline"
+    )
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        help="Use qLogEI baseline instead of RL agent"
+    )
+    parser.add_argument(
+        "--save",
+        type=str,
+        default=None,
+        help="Save results to file (e.g., results.npy)"
+    )
 
-    # print("\nAgent trained! Ready to use on real COCO benchmarks.")
-    # print("\nTo run full benchmarks, ensure cocoex is installed:")
-    # print("  pip install cocoex")
-    # print("\nThen uncomment and run main()")
+    args = parser.parse_args()
 
-    # Uncomment to run full benchmarks:
-    results = main()
+    # Run benchmarks
+    results = main(use_baseline=args.baseline)
+
+    # Save results if requested
+    if args.save:
+        np.save(args.save, results)
+        print(f"\nResults saved to {args.save}")
