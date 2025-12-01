@@ -65,8 +65,8 @@ N_INIT_FACTOR = 2    # initial random design = N_INIT_FACTOR * dim
 TRANSFORMER_MODEL_DIR = Path("..")
 TRANSFORMER_MODEL_PATTERN = "next_config_transformer_dim{dim}.pt"
 
-OUT_CSV = Path("../results_coco_transformer_vs_qlogei.csv")
-OUT_CSV_SUMMARY = Path("../results_coco_transformer_vs_qlogei_summary.csv")
+OUT_CSV = Path("results/results_coco_transformer_vs_qlogei.csv")
+OUT_CSV_SUMMARY = Path("results/results_coco_transformer_vs_qlogei_summary.csv")
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.double  # BoTorch prefers double for qLogEI

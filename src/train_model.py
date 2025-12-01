@@ -271,7 +271,7 @@ def train_next_config_model_for_dim_from_cache(
     model_path = Path(model_path)
 
     if log_csv_path is None:
-        log_csv_path = Path("../training_logs") / f"training_dim{dim}.csv"
+        log_csv_path = Path("training_logs") / f"training_dim{dim}.csv"
     log_csv_path = Path(log_csv_path)
     log_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
