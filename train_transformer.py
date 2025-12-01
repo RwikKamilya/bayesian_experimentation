@@ -32,23 +32,23 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 from cocoex.exceptions import InvalidProblemException
 
-
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
+
 
 # =========================
 # COCO utilities
 # =========================
 
 def collect_data_for_dim(
-    dim: int,
-    function_ids: List[int],
-    instance_ids: List[int],
-    target_points_per_pair: int,
-    n_offline_points: int = 10_000,
-    T_min: int = 20,
-    T_max: int = 50,
-    n_candidates_per_episode: int = 128,
-    seed: int = 0,
+        dim: int,
+        function_ids: List[int],
+        instance_ids: List[int],
+        target_points_per_pair: int,
+        n_offline_points: int = 10_000,
+        T_min: int = 20,
+        T_max: int = 50,
+        n_candidates_per_episode: int = 128,
+        seed: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Collect training data for a single dimension `dim`.
@@ -123,7 +123,7 @@ def collect_data_for_dim(
         print(
             f"[Data dim={dim}] Pair {pair_idx}/{total_pairs}: "
             f"done F{fid}, inst={iid} | samples={f.shape[0]} | "
-            f"time={pair_elapsed/60:.1f} min"
+            f"time={pair_elapsed / 60:.1f} min"
         )
 
         all_features.append(f)
@@ -140,21 +140,22 @@ def collect_data_for_dim(
     )
     return features, global_feats, targets
 
+
 def train_learned_acquisition_for_dim(
-    dim: int,
-    function_ids: List[int],
-    instance_ids: List[int],
-    target_points_per_pair: int = 100_000,
-    n_offline_points: int = 10_000,
-    T_min: int = 20,
-    T_max: int = 50,
-    n_candidates_per_episode: int = 128,
-    batch_size: int = 512,
-    n_epochs: int = 50,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-5,
-    seed: int = 0,
-    model_path: str = None,
+        dim: int,
+        function_ids: List[int],
+        instance_ids: List[int],
+        target_points_per_pair: int = 100_000,
+        n_offline_points: int = 10_000,
+        T_min: int = 20,
+        T_max: int = 50,
+        n_candidates_per_episode: int = 128,
+        batch_size: int = 512,
+        n_epochs: int = 50,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-5,
+        seed: int = 0,
+        model_path: str = None,
 ):
     """
     Train a learned acquisition model for a single dimension `dim`
@@ -264,14 +265,14 @@ def train_learned_acquisition_for_dim(
 
 
 def collect_data_for_problem_from_offline(
-    problem,
-    dim: int,
-    n_offline_points: int,
-    target_points: int,
-    T_min: int,
-    T_max: int,
-    n_candidates_per_episode: int,
-    rng: np.random.RandomState,
+        problem,
+        dim: int,
+        n_offline_points: int,
+        target_points: int,
+        T_min: int,
+        T_max: int,
+        n_candidates_per_episode: int,
+        rng: np.random.RandomState,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     For a single COCO problem:
@@ -349,10 +350,18 @@ def evaluate_coco_problem(problem, x_normalized: np.ndarray) -> Tuple[float, flo
 
     if getattr(problem, "number_of_constraints", 0) > 0:
         c_vals = np.asarray(problem.constraint(x), dtype=float)
-        c_val = float(np.max(c_vals))
+        c_val = float(np.max(c_vals)) if c_vals.size > 0 else 0.0
     else:
-        c_val = -1.0
+        c_val = 0.0  # treat unconstrained as feasible
+
+    if not np.isfinite(f_val):
+        # you can either resample or clip
+        f_val = 1e6
+    if not np.isfinite(c_val):
+        c_val = 1e6  # big positive => clearly infeasible
+
     return f_val, c_val
+
 
 
 # =========================
@@ -376,11 +385,11 @@ def compute_ei(mu_f: np.ndarray, sigma_f: np.ndarray, f_best: float) -> np.ndarr
 
 
 def teacher_cEI(
-    gp_f: GaussianProcessRegressor,
-    gp_c: GaussianProcessRegressor,
-    X_candidates: np.ndarray,
-    y_obs: np.ndarray,
-    c_obs: np.ndarray,
+        gp_f: GaussianProcessRegressor,
+        gp_c: GaussianProcessRegressor,
+        X_candidates: np.ndarray,
+        y_obs: np.ndarray,
+        c_obs: np.ndarray,
 ) -> np.ndarray:
     if len(y_obs) == 0:
         return np.zeros(X_candidates.shape[0], dtype=float)
@@ -405,10 +414,10 @@ def teacher_cEI(
 # =========================
 
 def precompute_offline_dataset(
-    problem,
-    dim: int,
-    n_points: int,
-    rng: np.random.RandomState,
+        problem,
+        dim: int,
+        n_points: int,
+        rng: np.random.RandomState,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     X_all = rng.uniform(0.0, 1.0, size=(n_points, dim))
     y_all = np.zeros(n_points, dtype=float)
@@ -425,7 +434,7 @@ def precompute_offline_dataset(
             except InvalidProblemException as e:
                 print(
                     f"[WARN] InvalidProblemException at offline sample {i}, "
-                    f"attempt {attempt+1}: {e}"
+                    f"attempt {attempt + 1}: {e}"
                 )
                 # resample x and try again
                 X_all[i] = rng.uniform(0.0, 1.0, size=(dim,))
@@ -439,16 +448,15 @@ def precompute_offline_dataset(
     return X_all, y_all, c_all
 
 
-
 def build_teacher_sequence_from_offline(
-    X_all: np.ndarray,
-    y_all: np.ndarray,
-    c_all: np.ndarray,
-    dim: int,
-    T_max: int,
-    rng: np.random.RandomState,
-    n_init: int = None,
-    n_candidates_per_step: int = 256,
+        X_all: np.ndarray,
+        y_all: np.ndarray,
+        c_all: np.ndarray,
+        dim: int,
+        T_max: int,
+        rng: np.random.RandomState,
+        n_init: int = None,
+        n_candidates_per_step: int = 256,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Build a single teacher sequence of length T_max using offline data.
@@ -490,15 +498,14 @@ def build_teacher_sequence_from_offline(
         kernel=kernel,
         alpha=1e-6,
         normalize_y=True,
-        n_restarts_optimizer=1,
-        random_state=rng.randint(0, 10_000),
+        optimizer=None,  # <-- no LBFGS, just use initial kernel params
     )
+
     gp_c = GaussianProcessRegressor(
         kernel=kernel,
         alpha=1e-6,
         normalize_y=True,
-        n_restarts_optimizer=1,
-        random_state=rng.randint(0, 10_000),
+        optimizer=None,
     )
 
     for t in range(n_init, T_max):
@@ -540,13 +547,13 @@ def build_teacher_sequence_from_offline(
 
 
 def build_sequences_for_dim(
-    dim: int,
-    function_ids: List[int],
-    instance_ids: List[int],
-    n_offline_points: int = 10_000,
-    episodes_per_pair: int = 50,
-    T_max: int = 50,
-    seed: int = 0,
+        dim: int,
+        function_ids: List[int],
+        instance_ids: List[int],
+        n_offline_points: int = 10_000,
+        episodes_per_pair: int = 50,
+        T_max: int = 50,
+        seed: int = 0,
 ):
     """
     For a given dimension:
@@ -623,7 +630,7 @@ def build_sequences_for_dim(
             if (ep + 1) % 10 == 0:
                 print(
                     f"  [Seq dim={dim} F{fid} i={iid}] "
-                    f"episodes={ep+1}/{episodes_per_pair}"
+                    f"episodes={ep + 1}/{episodes_per_pair}"
                 )
 
         elapsed = (time.time() - start_t) / 60.0
@@ -641,11 +648,16 @@ def build_sequences_for_dim(
     y_seqs = np.concatenate(y_seq_list, axis=0).astype(np.float32)
     c_seqs = np.concatenate(c_seq_list, axis=0).astype(np.float32)
 
+    for name, arr in [("X_seqs", X_seqs), ("y_seqs", y_seqs), ("c_seqs", c_seqs)]:
+        print(
+            f"{name}: shape={arr.shape}, finite={np.isfinite(arr).all()}, "
+            f"min={arr.min()}, max={arr.max()}"
+        )
+
     print(
         f"[Seq dim={dim}] Built {X_seqs.shape[0]} sequences of length {X_seqs.shape[1]}"
     )
     return X_seqs, y_seqs, c_seqs
-
 
 
 # =========================
@@ -663,54 +675,112 @@ class NextConfigDataset(torch.utils.data.Dataset):
         target:  x_L  (the next config)
 
     We encode 'all prefixes' by mapping dataset index -> (episode_idx, target_step).
+
+    IMPORTANT: we normalize y and c to [0,1] with clipping so that all
+    token features are in a small, bounded range. This prevents the
+    Transformer from seeing huge magnitudes and producing NaNs.
     """
 
     def __init__(self, X_seqs: np.ndarray, y_seqs: np.ndarray, c_seqs: np.ndarray):
         """
-        X_seqs: [N_episodes, T_max, dim]
+        X_seqs: [N_episodes, T_max, dim]  (x in [0,1]^dim)
         y_seqs: [N_episodes, T_max]
         c_seqs: [N_episodes, T_max]
         """
         assert X_seqs.ndim == 3
-        self.X_seqs = torch.from_numpy(X_seqs)  # [N, T, D]
-        self.y_seqs = torch.from_numpy(y_seqs)  # [N, T]
-        self.c_seqs = torch.from_numpy(c_seqs)  # [N, T]
+        # Store as torch tensors
+        self.X_seqs = torch.from_numpy(X_seqs.astype(np.float32))  # [N, T, D]
+        self.y_seqs = torch.from_numpy(y_seqs.astype(np.float32))  # [N, T]
+        self.c_seqs = torch.from_numpy(c_seqs.astype(np.float32))  # [N, T]
 
         self.num_episodes, self.max_len, self.dim = self.X_seqs.shape
-        # For each episode, we have (max_len - 1) possible prefixes (L = 1..T-1)
         self.prefixes_per_episode = self.max_len - 1
         self.total_examples = self.num_episodes * self.prefixes_per_episode
 
+        # ---------- GLOBAL NORMALIZATION STATS FOR y AND c ----------
+        # Flatten over all episodes and timesteps
+        y_flat = self.y_seqs.view(-1)
+        c_flat = self.c_seqs.view(-1)
+
+        # Replace NaNs/Infs if any slipped through
+        y_flat = torch.nan_to_num(y_flat, nan=0.0, posinf=1e6, neginf=-1e6)
+        c_flat = torch.nan_to_num(c_flat, nan=0.0, posinf=1e6, neginf=-1e6)
+
+        # Clip extreme values so outliers / sentinels don't dominate stats
+        y_flat = torch.clamp(y_flat, min=-1e3, max=1e3)
+        c_flat = torch.clamp(c_flat, min=-1e3, max=1e3)
+
+        # Compute mean/std on the clipped data
+        self.y_mean = y_flat.mean()
+        self.y_std = y_flat.std().clamp_min(1e-6)
+
+        self.c_mean = c_flat.mean()
+        self.c_std = c_flat.std().clamp_min(1e-6)
+
+        # How strongly to clip standardized values before mapping to [0,1]
+        self._K = 5.0  # z in [-K, K] -> mapped to [0,1]
+
     def __len__(self):
         return self.total_examples
+
+    def _norm_yc(self, y_hist: torch.Tensor, c_hist: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Normalize y and c to [0,1] using dataset-wide mean/std, with clipping.
+        """
+        # Standardize
+        z_y = (y_hist - self.y_mean) / self.y_std
+        z_c = (c_hist - self.c_mean) / self.c_std
+
+        # Clip to avoid huge magnitudes
+        z_y = torch.clamp(z_y, min=-self._K, max=self._K)
+        z_c = torch.clamp(z_c, min=-self._K, max=self._K)
+
+        # Map [-K, K] -> [0,1]
+        y_norm = (z_y + self._K) / (2.0 * self._K)
+        c_norm = (z_c + self._K) / (2.0 * self._K)
+
+        return y_norm, c_norm
 
     def __getitem__(self, idx: int):
         ep_idx = idx // self.prefixes_per_episode
         step_idx = idx % self.prefixes_per_episode  # 0..T-2
         L = step_idx + 1  # prefix length (1..T-1)
-        target_step = L   # next point index
+        target_step = L   # index of next point
 
         X_seq = self.X_seqs[ep_idx]      # [T, D]
         y_seq = self.y_seqs[ep_idx]      # [T]
         c_seq = self.c_seqs[ep_idx]      # [T]
 
-        # tokens for prefix [0:L]
-        x_hist = X_seq[:L]                       # [L, D]
+        # Prefix [0:L]
+        x_hist = X_seq[:L]                       # [L, D], already ~[0,1]
         y_hist = y_seq[:L].unsqueeze(-1)         # [L, 1]
         c_hist = c_seq[:L].unsqueeze(-1)         # [L, 1]
 
-        tokens = torch.cat([x_hist, y_hist, c_hist], dim=-1)  # [L, D+2]
+        # Normalize y and c to [0,1]
+        y_norm, c_norm = self._norm_yc(y_hist, c_hist)
 
-        # pad to max_len
+        # Safety: clamp x_hist to [0,1] in case of numerical drift
+        x_hist = torch.clamp(x_hist, 0.0, 1.0)
+
+        tokens = torch.cat([x_hist, y_norm, c_norm], dim=-1)  # [L, D+2]
+
+        # Pad to max_len
         token_dim = tokens.size(-1)
         if L < self.max_len:
             pad = torch.zeros(self.max_len - L, token_dim, dtype=tokens.dtype)
             tokens = torch.cat([tokens, pad], dim=0)
-        # attention mask: 1 for real tokens, 0 for padding
+
+        # Attention mask: 1 for real tokens, 0 for padding
         attn_mask = torch.zeros(self.max_len, dtype=torch.float32)
         attn_mask[:L] = 1.0
 
-        target_x = X_seq[target_step]  # [D]
+        target_x = X_seq[target_step]  # [D], still in [0,1]
+
+        # Final safety: ensure tokens and target_x are finite
+        if not torch.isfinite(tokens).all():
+            tokens = torch.nan_to_num(tokens, nan=0.0, posinf=1.0, neginf=0.0)
+        if not torch.isfinite(target_x).all():
+            target_x = torch.nan_to_num(target_x, nan=0.0, posinf=1.0, neginf=0.0)
 
         return tokens, attn_mask, target_x
 
@@ -742,14 +812,14 @@ class PositionalEncoding(nn.Module):
 
 class NextConfigTransformer(nn.Module):
     def __init__(
-        self,
-        dim: int,
-        max_len: int,
-        d_model: int = 128,
-        n_heads: int = 4,
-        num_layers: int = 3,
-        dim_feedforward: int = 256,
-        dropout: float = 0.1,
+            self,
+            dim: int,
+            max_len: int,
+            d_model: int = 128,
+            n_heads: int = 4,
+            num_layers: int = 3,
+            dim_feedforward: int = 256,
+            dropout: float = 0.1,
     ):
         """
         dim:       dimension of config space
@@ -787,17 +857,17 @@ class NextConfigTransformer(nn.Module):
             pred_x: [batch, dim]  (next config)
         """
         B, L, _ = tokens.shape
-        x = self.input_proj(tokens)          # [B, L, d_model]
-        x = self.pos_enc(x)                  # [B, L, d_model]
+        x = self.input_proj(tokens)  # [B, L, d_model]
+        x = self.pos_enc(x)  # [B, L, d_model]
 
         # Transformer expects [L, B, d_model]
-        x = x.transpose(0, 1)                # [L, B, d_model]
+        x = x.transpose(0, 1)  # [L, B, d_model]
 
         # key_padding_mask: True at PAD positions
         key_padding_mask = (attn_mask == 0)  # [B, L]
         enc_out = self.encoder(x, src_key_padding_mask=key_padding_mask)  # [L, B, d_model]
 
-        enc_out = enc_out.transpose(0, 1)    # [B, L, d_model]
+        enc_out = enc_out.transpose(0, 1)  # [B, L, d_model]
 
         # get last *real* token hidden state for each batch element
         lengths = attn_mask.sum(dim=1).long() - 1  # [B]
@@ -815,18 +885,18 @@ class NextConfigTransformer(nn.Module):
 # =========================
 
 def train_next_config_model_for_dim(
-    dim: int,
-    function_ids: List[int],
-    instance_ids: List[int],
-    n_offline_points: int = 10_000,
-    episodes_per_pair: int = 50,
-    T_max: int = 50,
-    batch_size: int = 128,
-    n_epochs: int = 50,
-    lr: float = 1e-3,
-    weight_decay: float = 1e-5,
-    seed: int = 0,
-    model_path: str = None,
+        dim: int,
+        function_ids: List[int],
+        instance_ids: List[int],
+        n_offline_points: int = 10_000,
+        episodes_per_pair: int = 50,
+        T_max: int = 50,
+        batch_size: int = 128,
+        n_epochs: int = 50,
+        lr: float = 1e-3,
+        weight_decay: float = 1e-5,
+        seed: int = 0,
+        model_path: str = None,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[Train dim={dim}] Using device: {device}")
@@ -964,11 +1034,11 @@ def main():
             dim=dim,
             function_ids=TARGET_FIDS,
             instance_ids=TARGET_INSTANCES,
-            n_offline_points=10_000,
-            episodes_per_pair=50,
+            n_offline_points=1000,
+            episodes_per_pair=30,
             T_max=50,
             batch_size=128,
-            n_epochs=50,
+            n_epochs=200,
             lr=1e-3,
             weight_decay=1e-5,
             seed=42 + dim,
@@ -978,4 +1048,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

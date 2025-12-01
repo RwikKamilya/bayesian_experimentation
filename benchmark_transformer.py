@@ -51,7 +51,7 @@ warnings.filterwarnings("ignore", category=OptimizationWarning)
 
 FUNCTIONS = [2, 4, 6, 50, 52, 54]
 INSTANCES = [1, 2, 3]
-DIMENSIONS = [2, 10]  # extend to 40 if you manage Transformer there
+DIMENSIONS = [2, 10]
 REPETITIONS = 5
 BUDGET_FACTOR = 10   # evals = BUDGET_FACTOR * dim
 N_INIT_FACTOR = 2    # initial random design = N_INIT_FACTOR * dim
@@ -175,6 +175,9 @@ class TransformerOptimizer:
     At each BO step, we feed the history sequence:
         (x_0, y_0, c_0), ..., (x_{t-1}, y_{t-1}, c_{t-1})
     and the model predicts x_t.
+
+    We normalize y and c to [0,1] similarly to training, so that all
+    token features are bounded and well-scaled.
     """
 
     def __init__(self, dim: int, ckpt_path: Path):
@@ -190,13 +193,49 @@ class TransformerOptimizer:
         self.model.to(DEVICE)
         self.model.eval()
 
+        # normalization hyperparam, must match training dataset logic
+        self._K = 5.0
+
+    def _normalize_yc(self, y_hist: np.ndarray, c_hist: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Normalize y and c to [0,1] using per-history mean/std, with clipping.
+        This mirrors the training dataset's normalization idea.
+        """
+        y = np.nan_to_num(y_hist, nan=0.0, posinf=1e6, neginf=-1e6)
+        c = np.nan_to_num(c_hist, nan=0.0, posinf=1e6, neginf=-1e6)
+
+        # clip extremes
+        y = np.clip(y, -1e3, 1e3)
+        c = np.clip(c, -1e3, 1e3)
+
+        y_mean = y.mean()
+        y_std = y.std()
+        if y_std < 1e-6:
+            y_std = 1.0
+
+        c_mean = c.mean()
+        c_std = c.std()
+        if c_std < 1e-6:
+            c_std = 1.0
+
+        z_y = (y - y_mean) / y_std
+        z_c = (c - c_mean) / c_std
+
+        z_y = np.clip(z_y, -self._K, self._K)
+        z_c = np.clip(z_c, -self._K, self._K)
+
+        y_norm = (z_y + self._K) / (2.0 * self._K)
+        c_norm = (z_c + self._K) / (2.0 * self._K)
+
+        return y_norm, c_norm
+
     def suggest(
-        self,
-        X_hist: np.ndarray,
-        f_hist: np.ndarray,
-        c_hist: np.ndarray,
-        step: int,
-        budget: int,
+            self,
+            X_hist: np.ndarray,
+            f_hist: np.ndarray,
+            c_hist: np.ndarray,
+            step: int,
+            budget: int,
     ) -> np.ndarray:
         """
         Returns a point in [0, 1]^dim (normalized space).
@@ -212,9 +251,12 @@ class TransformerOptimizer:
         y_seq = np.asarray(f_hist[-L:], dtype=np.float32)   # [L]
         c_seq = np.asarray(c_hist[-L:], dtype=np.float32)   # [L]
 
-        # Build tokens: [L, dim+2] then pad to [T_max, dim+2]
+        # normalize y/c to [0,1]
+        y_norm, c_norm = self._normalize_yc(y_seq, c_seq)
+
+        # tokens in [0,1]^(dim+2)
         tokens = np.concatenate(
-            [X_seq, y_seq[:, None], c_seq[:, None]],
+            [np.clip(X_seq, 0.0, 1.0), y_norm[:, None], c_norm[:, None]],
             axis=-1
         )  # [L, dim+2]
 
@@ -233,7 +275,6 @@ class TransformerOptimizer:
             pred_x = self.model(tokens_t, attn_mask_t)  # [1, dim]
 
         x_unit = pred_x.squeeze(0).cpu().numpy()
-        # Model was trained on normalized configs in [0,1], but to be safe:
         x_unit = np.clip(x_unit, 0.0, 1.0)
         return x_unit
 
@@ -325,11 +366,14 @@ class QLogEIOptimizer:
         train_con = torch.tensor(c_hist, dtype=self.dtype, device=self.device).unsqueeze(-1)
 
         feas_mask = (train_con <= 0.0)
+
         if feas_mask.any():
-            best_f = (train_obj * feas_mask).max()
+            # Only look at feasible points
+            best_f = train_obj[feas_mask].max()
         else:
-            # No feasible points yet – just treat best_f as current max
+            # No feasible yet – fallback: just use global max (unconstrained)
             best_f = train_obj.max()
+
 
         acq = qLogExpectedImprovement(
             model=model,
